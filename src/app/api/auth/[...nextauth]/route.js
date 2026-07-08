@@ -21,7 +21,7 @@ const handler = NextAuth({
           const params = new URLSearchParams({
             grant_type: 'authorization_code',
             code: context.params.code,
-            redirect_uri: context.provider.callbackUrl,
+            redirect_uri: process.env.NEXTAUTH_URL + '/api/auth/callback/linkedin',
             client_id: context.provider.clientId,
             client_secret: context.provider.clientSecret,
           })
