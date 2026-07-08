@@ -21,7 +21,7 @@ export default function Dashboard() {
   const router = useRouter()
 
   const [venues, setVenues] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)  
   const [view, setView] = useState('map')
   const [cityFilter, setCityFilter] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
