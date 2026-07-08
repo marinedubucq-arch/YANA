@@ -1,17 +1,20 @@
 import NextAuth from 'next-auth'
-import LinkedInProvider from 'next-auth/providers/linkedin'
 import { getServiceClient } from '@/lib/supabase'
 
 export const authOptions = {
   providers: [
-    LinkedInProvider({
+    {
+      id: 'linkedin',
+      name: 'LinkedIn',
+      type: 'oauth',
       clientId: process.env.LINKEDIN_CLIENT_ID,
       clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+      wellKnown: 'https://www.linkedin.com/oauth/.well-known/openid-configuration',
       authorization: {
         params: { scope: 'openid profile email' },
       },
-      issuer: 'https://www.linkedin.com',
-      jwks_endpoint: 'https://www.linkedin.com/oauth/openid/jwks',
+      idToken: true,
+      checks: ['pkce', 'state'],
       profile(profile) {
         return {
           id: profile.sub,
@@ -20,21 +23,17 @@ export const authOptions = {
           image: profile.picture,
           firstName: profile.given_name ?? '',
           lastName: profile.family_name ?? '',
-          vanityName: profile.vanityName,
         }
       },
-    }),
+    },
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
       try {
         const supabase = getServiceClient()
         const linkedinId = profile?.sub ?? account?.providerAccountId
-        const linkedinUrl = profile?.vanityName
-          ? `https://www.linkedin.com/in/${profile.vanityName}`
-          : `https://www.linkedin.com/in/${linkedinId}`
+        const linkedinUrl = `https://www.linkedin.com/in/${linkedinId}`
 
-        // Check if user already exists
         const { data: existing } = await supabase
           .from('users')
           .select('id')
@@ -60,9 +59,7 @@ export const authOptions = {
     async jwt({ token, account, profile }) {
       if (account && profile) {
         token.linkedinId = profile.sub ?? account.providerAccountId
-        token.linkedinUrl = profile.vanityName
-          ? `https://www.linkedin.com/in/${profile.vanityName}`
-          : `https://www.linkedin.com/in/${profile.sub}`
+        token.linkedinUrl = `https://www.linkedin.com/in/${profile.sub}`
       }
       return token
     },
@@ -71,7 +68,6 @@ export const authOptions = {
       session.user.linkedinId = token.linkedinId
       session.user.linkedinUrl = token.linkedinUrl
 
-      // Fetch up-to-date user data from DB
       try {
         const supabase = getServiceClient()
         const { data } = await supabase
@@ -94,6 +90,7 @@ export const authOptions = {
     error: '/',
   },
   secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true,
 }
 
 const handler = NextAuth(authOptions)
