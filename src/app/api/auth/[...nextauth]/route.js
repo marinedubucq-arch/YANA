@@ -67,7 +67,7 @@ const handler = NextAuth({
         const { data: existing } = await supabase
           .from('users').select('id').eq('linkedin_id', linkedinId).single()
         if (!existing) {
-          const { error } = await supabase.from('users').insert({
+          await supabase.from('users').insert({
             linkedin_id: linkedinId,
             linkedin_url: `https://www.linkedin.com/in/${linkedinId}`,
             first_name: profile?.given_name ?? '',
@@ -75,11 +75,8 @@ const handler = NextAuth({
             email: user.email,
             profile_complete: false,
           })
-          if (error) console.error('[signIn] insert error:', error)
         }
-      } catch (err) {
-        console.error('[signIn] error:', err)
-      }
+      } catch (err) { console.error('[signIn]', err) }
       return true
     },
     async jwt({ token, account, profile }) {
@@ -104,7 +101,7 @@ const handler = NextAuth({
           session.user.profileComplete = false
         }
       } catch (err) {
-        console.error('[session] error:', err)
+        console.error('[session]', err)
         session.user.profileComplete = false
       }
       return session
