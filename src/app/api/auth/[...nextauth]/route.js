@@ -1,30 +1,18 @@
 import NextAuth from 'next-auth'
+import LinkedInProvider from 'next-auth/providers/linkedin'
 import { getServiceClient } from '@/lib/supabase'
 
 export const authOptions = {
   providers: [
     {
-      id: 'linkedin',
-      name: 'LinkedIn',
-      type: 'oauth',
-      clientId: process.env.LINKEDIN_CLIENT_ID,
-      clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
-      wellKnown: 'https://www.linkedin.com/oauth/.well-known/openid-configuration',
-      authorization: {
-        params: { scope: 'openid profile email' },
-      },
-      idToken: true,
-      checks: ['pkce', 'state'],
-      profile(profile) {
-        return {
-          id: profile.sub,
-          name: `${profile.given_name ?? ''} ${profile.family_name ?? ''}`.trim(),
-          email: profile.email,
-          image: profile.picture,
-          firstName: profile.given_name ?? '',
-          lastName: profile.family_name ?? '',
-        }
-      },
+      ...LinkedInProvider({
+        clientId: process.env.LINKEDIN_CLIENT_ID,
+        clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+        authorization: {
+          params: { scope: 'openid profile email' },
+        },
+      }),
+      checks: ['state'],
     },
   ],
   callbacks: {
@@ -33,13 +21,11 @@ export const authOptions = {
         const supabase = getServiceClient()
         const linkedinId = profile?.sub ?? account?.providerAccountId
         const linkedinUrl = `https://www.linkedin.com/in/${linkedinId}`
-
         const { data: existing } = await supabase
           .from('users')
           .select('id')
           .eq('linkedin_id', linkedinId)
           .single()
-
         if (!existing) {
           await supabase.from('users').insert({
             linkedin_id: linkedinId,
@@ -55,7 +41,6 @@ export const authOptions = {
       }
       return true
     },
-
     async jwt({ token, account, profile }) {
       if (account && profile) {
         token.linkedinId = profile.sub ?? account.providerAccountId
@@ -63,11 +48,9 @@ export const authOptions = {
       }
       return token
     },
-
     async session({ session, token }) {
       session.user.linkedinId = token.linkedinId
       session.user.linkedinUrl = token.linkedinUrl
-
       try {
         const supabase = getServiceClient()
         const { data } = await supabase
@@ -85,10 +68,7 @@ export const authOptions = {
       return session
     },
   },
-  pages: {
-    signIn: '/',
-    error: '/',
-  },
+  pages: { signIn: '/', error: '/' },
   secret: process.env.NEXTAUTH_SECRET,
   trustHost: true,
 }
