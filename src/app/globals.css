@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design system YANA ─────────────────────────────────────────
+   Palette : Noir (#000) + Blanc (#fff) + Vert présence (#22c55e)
+   Aucune autre couleur.
+   ─────────────────────────────────────────────────────────────── */
+
+:root {
+  --yana-black:   #000000;
+  --yana-white:   #ffffff;
+  --yana-gray-1:  #0a0a0a;  /* fond app sombre */
+  --yana-gray-2:  #111111;  /* surface sombre */
+  --yana-gray-3:  #1a1a1a;  /* bordures sombres */
+  --yana-gray-4:  #2a2a2a;  /* éléments discrets */
+  --yana-gray-5:  #444444;  /* texte secondaire sombre */
+  --yana-gray-6:  #888888;  /* texte muted */
+  --yana-gray-7:  #e0e0e0;  /* bordures claires */
+  --yana-gray-8:  #f0f0f0;  /* fonds clairs subtils */
+  --yana-green:   #22c55e;  /* présence uniquement */
+
+  --font-display: Impact, 'Arial Narrow', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  background: var(--yana-black);
+  color: var(--yana-white);
+  font-family: Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Leaflet map ── */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  font-family: Inter, sans-serif;
+}
+
+/* ── Présence dot animation ── */
+@keyframes presence-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.3); }
+}
+.presence-dot {
+  animation: presence-pulse 2s ease-in-out infinite;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar       { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--yana-gray-4); border-radius: 2px; }
+
+/* ── Modal backdrop ── */
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* ── Leaflet marker override ── */
+.venue-marker-icon { background: transparent; border: none; }
