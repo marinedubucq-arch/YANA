@@ -21,7 +21,7 @@ export default function Dashboard() {
   const router = useRouter()
 
   const [venues, setVenues] = useState([])
-  const [loading, setLoading] = useState(false)  
+  const [loading, setLoading] = useState(false)
   const [view, setView] = useState('map')
   const [cityFilter, setCityFilter] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
@@ -31,6 +31,12 @@ export default function Dashboard() {
   const [myPresence, setMyPresence] = useState(null)
   const [showProfile, setShowProfile] = useState(false)
   const [lastRefresh, setLastRefresh] = useState(null)
+
+  // Signalement
+  const [reportingVenueId, setReportingVenueId] = useState(null)
+  const [reportText, setReportText] = useState('')
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportSuccess, setReportSuccess] = useState({})
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/')
@@ -76,6 +82,26 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [session, fetchVenues])
 
+  async function handleReport(venueId) {
+    if (!reportText.trim()) return
+    setReportLoading(true)
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venue_id: venueId, reason: reportText }),
+      })
+      if (!res.ok) throw new Error()
+      setReportSuccess(prev => ({ ...prev, [venueId]: true }))
+      setReportingVenueId(null)
+      setReportText('')
+    } catch {
+      // silent — l'utilisateur verra que le bouton reste disponible
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
   const cities = [...new Set(venues.map(v => v.city))].sort()
   const filteredVenues = venues.filter(v => {
     const matchCity = !cityFilter || v.city === cityFilter
@@ -99,7 +125,7 @@ export default function Dashboard() {
   const profileComplete = session?.user?.profileComplete
   const user = session?.user?.dbUser
 
-  if (status === 'loading' || (status === 'authenticated' && loading && !venues.length)) {
+  if (status === 'loading' || (status === 'authenticated' && loading && !venues.length && profileComplete)) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
         <div style={{ width: 32, height: 32, border: '2px solid #222', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
@@ -127,12 +153,10 @@ export default function Dashboard() {
       {/* Header */}
       <header style={{ background: '#000', borderBottom: '1px solid #1a1a1a', padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, zIndex: 10 }}>
 
-        {/* Wordmark */}
         <div style={{ fontFamily: 'Impact, Arial Narrow, Arial, sans-serif', fontSize: 22, letterSpacing: '0.04em', color: '#fff', marginRight: 8, flexShrink: 0 }}>
           YANA
         </div>
 
-        {/* Search */}
         {profileComplete && (
           <div style={{ flex: 1, maxWidth: 280, position: 'relative' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
@@ -148,26 +172,20 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* City filter */}
         {profileComplete && cities.length > 1 && (
           <select
             value={cityFilter}
             onChange={e => setCityFilter(e.target.value)}
-            style={{ background: '#111', border: '1px solid #222', color: '#fff', padding: '6px 10px', fontSize: 11, outline: 'none', fontFamily: 'Inter, sans-serif', display: 'none' }}
-            className="sm:block"
+            style={{ background: '#111', border: '1px solid #222', color: '#fff', padding: '6px 10px', fontSize: 11, outline: 'none', fontFamily: 'Inter, sans-serif' }}
           >
             <option value="">Toutes les villes</option>
             {cities.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         )}
 
-        {/* View toggle */}
         {profileComplete && (
           <div style={{ display: 'flex', border: '1px solid #222', overflow: 'hidden', flexShrink: 0 }}>
-            {[
-              { id: 'map', label: 'Carte' },
-              { id: 'list', label: 'Liste' },
-            ].map(({ id, label }) => (
+            {[{ id: 'map', label: 'Carte' }, { id: 'list', label: 'Liste' }].map(({ id, label }) => (
               <button
                 key={id}
                 onClick={() => setView(id)}
@@ -179,7 +197,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Refresh */}
         {profileComplete && (
           <button
             onClick={fetchVenues}
@@ -193,10 +210,9 @@ export default function Dashboard() {
           </button>
         )}
 
-        {/* User + sign out */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           {user && (
-            <div style={{ textAlign: 'right', display: 'none' }} className="sm:block">
+            <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>{user.first_name}</div>
               <div style={{ fontSize: 10, color: '#444' }}>{user.industry}</div>
             </div>
@@ -229,7 +245,7 @@ export default function Dashboard() {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
           {/* Map */}
-          <div style={{ flex: view === 'list' ? 0 : 1, display: view === 'list' ? 'none' : 'block' }} className={view === 'list' ? 'lg:flex lg:flex-1' : 'flex-1'}>
+          <div style={{ flex: view === 'list' ? 0 : 1, display: view === 'list' ? 'none' : 'block' }}>
             <div style={{ width: '100%', height: '100%', position: 'relative' }}>
               <MapComponent
                 venues={filteredVenues}
@@ -237,10 +253,9 @@ export default function Dashboard() {
                 selectedVenueId={selectedVenue?.id}
               />
 
-              {/* My presence badge */}
               {myPresence && (
                 <div style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: '#fff', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #e8e8e8', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', whiteSpace: 'nowrap' }}>
-                  <div className="presence-dot" style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
                   <span style={{ fontSize: 11, color: '#000', fontWeight: 600 }}>
                     Présent(e) — {PERIOD_LABELS[myPresence.period]}
                   </span>
@@ -259,8 +274,7 @@ export default function Dashboard() {
           </div>
 
           {/* List panel */}
-          <div style={{ width: view === 'map' ? 0 : '100%', display: view === 'map' ? 'none' : 'flex', flexDirection: 'column', background: '#fff', borderLeft: '1px solid #e8e8e8', overflow: 'hidden' }}
-               className={view === 'map' ? 'lg:flex lg:w-96' : 'flex-1 lg:w-96'}>
+          <div style={{ width: view === 'map' ? 0 : '100%', display: view === 'map' ? 'none' : 'flex', flexDirection: 'column', background: '#fff', borderLeft: '1px solid #e8e8e8', overflow: 'hidden' }}>
 
             {/* Panel header */}
             <div style={{ padding: '10px 14px', borderBottom: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -276,7 +290,7 @@ export default function Dashboard() {
               </div>
               {totalPresent > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#22c55e', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  <div className="presence-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
                   {totalPresent} en ligne
                 </div>
               )}
@@ -319,7 +333,7 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {selectedVenue.presence.map((p, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <div className="presence-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
                           <span style={{ fontSize: 11, fontWeight: 600, color: '#000' }}>{p.firstName}</span>
                           <span style={{ fontSize: 11, color: '#aaa' }}>· {p.industry}</span>
                           <span style={{ fontSize: 10, color: '#ccc' }}>· {PERIOD_LABELS[p.period]}</span>
@@ -335,6 +349,47 @@ export default function Dashboard() {
                 >
                   {myPresence?.venue_id === selectedVenue.id ? 'Modifier ma présence' : 'Je suis ici'}
                 </button>
+
+                {/* ── Signalement ── */}
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #ececec' }}>
+                  {reportSuccess[selectedVenue.id] ? (
+                    <p style={{ fontSize: 10, color: '#22c55e', margin: 0, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      ✓ Signalement envoyé — merci !
+                    </p>
+                  ) : reportingVenueId === selectedVenue.id ? (
+                    <div>
+                      <textarea
+                        value={reportText}
+                        onChange={e => setReportText(e.target.value)}
+                        placeholder="Décris le problème (wifi coupé, trop bruyant, consommation obligatoire, prises supprimées…)"
+                        rows={2}
+                        style={{ width: '100%', fontSize: 11, border: '1px solid #ddd', padding: '6px 8px', resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif', color: '#000', background: '#fff', boxSizing: 'border-box', borderRadius: 0 }}
+                      />
+                      <div style={{ display: 'flex', gap: 6, marginTop: 5, alignItems: 'center' }}>
+                        <button
+                          onClick={() => { setReportingVenueId(null); setReportText('') }}
+                          style={{ fontSize: 10, color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: 0 }}
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          onClick={() => handleReport(selectedVenue.id)}
+                          disabled={!reportText.trim() || reportLoading}
+                          style={{ fontSize: 10, color: '#000', background: 'none', border: '1px solid #000', padding: '4px 10px', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: !reportText.trim() || reportLoading ? 0.4 : 1 }}
+                        >
+                          {reportLoading ? 'Envoi…' : 'Envoyer →'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setReportingVenueId(selectedVenue.id)}
+                      style={{ fontSize: 10, color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: 0 }}
+                    >
+                      ⚑ Ce lieu n'est plus laptop-friendly ?
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -353,10 +408,6 @@ export default function Dashboard() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        @media (min-width: 1024px) {
-          [data-view-panel] { display: flex !important; width: 384px !important; }
-          [data-view-map] { display: block !important; flex: 1 !important; }
-        }
       `}</style>
     </div>
   )
