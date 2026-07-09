@@ -1,8 +1,8 @@
 'use client'
 import { useState, useCallback } from 'react'
-import { Plus, Trash2, Eye, EyeOff, CheckCircle, RefreshCw, Users, MapPin, MessageSquare, Building } from 'lucide-react'
+import { Plus, Trash2, Eye, EyeOff, CheckCircle, RefreshCw, Users, MapPin, MessageSquare, Building, AlertTriangle } from 'lucide-react'
 
-const TABS = ['Lieux', 'Utilisateurs', 'Demandes établissements', 'Suggestions lieux']
+const TABS = ['Lieux', 'Utilisateurs', 'Demandes établissements', 'Suggestions lieux', 'Signalements']
 
 function useAdminFetch(token) {
   const headers = { 'Content-Type': 'application/json', 'x-admin-token': token }
@@ -15,15 +15,9 @@ function useAdminFetch(token) {
 }
 
 const inputCls = {
-  width: '100%',
-  border: '1px solid #e0e0e0',
-  padding: '8px 10px',
-  fontSize: 12,
-  color: '#000',
-  background: '#fff',
-  outline: 'none',
-  fontFamily: 'Inter, sans-serif',
-  borderRadius: 0,
+  width: '100%', border: '1px solid #e0e0e0', padding: '8px 10px',
+  fontSize: 12, color: '#000', background: '#fff', outline: 'none',
+  fontFamily: 'Inter, sans-serif', borderRadius: 0,
 }
 
 export default function AdminPage() {
@@ -36,12 +30,18 @@ export default function AdminPage() {
   const [users, setUsers] = useState([])
   const [requests, setRequests] = useState([])
   const [suggestions, setSuggestions] = useState([])
+  const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(false)
 
   const [newVenue, setNewVenue] = useState({ name: '', address: '', city: 'Paris', lat: '', lng: '', comment: '', venue_type: 'Café' })
   const [showAddVenue, setShowAddVenue] = useState(false)
   const [addVenueLoading, setAddVenueLoading] = useState(false)
   const [addVenueError, setAddVenueError] = useState('')
+
+  // Google Maps import
+  const [gmapsUrl, setGmapsUrl] = useState('')
+  const [gmapsLoading, setGmapsLoading] = useState(false)
+  const [gmapsError, setGmapsError] = useState('')
 
   const apiFetch = useAdminFetch(token)
 
@@ -63,21 +63,89 @@ export default function AdminPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [v, u, r] = await Promise.all([
+      const [v, u, r, rep] = await Promise.all([
         apiFetch('/api/admin/venues'),
         apiFetch('/api/admin/users'),
         apiFetch('/api/admin/requests'),
+        apiFetch('/api/admin/reports'),
       ])
       setVenues(v)
       setUsers(u)
       setRequests(r.requests || [])
       setSuggestions(r.suggestions || [])
+      setReports(rep)
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
   }, [token])
+
+  async function handleGmapsImport() {
+    if (!gmapsUrl.trim()) return
+    setGmapsLoading(true)
+    setGmapsError('')
+    try {
+      let url = gmapsUrl.trim()
+
+      // Expand shortened URLs via server
+      if (url.includes('goo.gl') || url.includes('maps.app')) {
+        const res = await fetch('/api/admin/expand-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+          body: JSON.stringify({ url }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.url) url = data.url
+        }
+      }
+
+      // Extract place name
+      const placeMatch = url.match(/maps\/place\/([^/@?]+)/)
+      let name = ''
+      if (placeMatch) {
+        name = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).replace(/\/$/, '').trim()
+      }
+
+      // Extract coordinates
+      const coordMatch = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/)
+      if (!coordMatch) {
+        setGmapsError("Impossible d'extraire les coordonnées. Copie l'URL depuis la barre d'adresse (pas le bouton Partager).")
+        return
+      }
+
+      const lat = coordMatch[1]
+      const lng = coordMatch[2]
+
+      // Reverse geocode with Nominatim (free)
+      const nominatimRes = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+        { headers: { 'Accept-Language': 'fr-FR,fr;q=0.9' } }
+      )
+      const geo = await nominatimRes.json()
+
+      let address = ''
+      const a = geo.address || {}
+      const parts = []
+      if (a.house_number && a.road) parts.push(`${a.house_number} ${a.road}`)
+      else if (a.road) parts.push(a.road)
+      else if (a.pedestrian) parts.push(a.pedestrian)
+      const city = a.city || a.town || a.village || a.municipality || 'Paris'
+      if (a.postcode) parts.push(`${a.postcode} ${city}`)
+      else parts.push(city)
+      address = parts.join(', ')
+      if (!address) address = geo.display_name || ''
+
+      setNewVenue(v => ({ ...v, name: name || v.name, address, lat, lng, city }))
+      setShowAddVenue(true)
+      setGmapsUrl('')
+    } catch (err) {
+      setGmapsError("Erreur lors de l'extraction : " + err.message)
+    } finally {
+      setGmapsLoading(false)
+    }
+  }
 
   async function toggleVenueActive(venue) {
     await apiFetch('/api/admin/venues', { method: 'PATCH', body: JSON.stringify({ id: venue.id, active: !venue.active }) })
@@ -121,14 +189,18 @@ export default function AdminPage() {
   }
 
   async function markReviewed(type, id) {
-    await apiFetch('/api/admin/requests', { method: 'PATCH', body: JSON.stringify({ type, id }) })
-    if (type === 'suggestion') setSuggestions(ss => ss.map(s => s.id === id ? { ...s, reviewed: true } : s))
-    else setRequests(rs => rs.map(r => r.id === id ? { ...r, reviewed: true } : r))
+    if (type === 'report') {
+      await apiFetch('/api/admin/reports', { method: 'PATCH', body: JSON.stringify({ id }) })
+      setReports(rs => rs.map(r => r.id === id ? { ...r, reviewed: true } : r))
+    } else {
+      await apiFetch('/api/admin/requests', { method: 'PATCH', body: JSON.stringify({ type, id }) })
+      if (type === 'suggestion') setSuggestions(ss => ss.map(s => s.id === id ? { ...s, reviewed: true } : s))
+      else setRequests(rs => rs.map(r => r.id === id ? { ...r, reviewed: true } : r))
+    }
   }
 
   const font = { fontFamily: 'Inter, sans-serif' }
 
-  // ── Auth gate ──────────────────────────────────────────
   if (!authed) {
     return (
       <div style={{ minHeight: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, ...font }}>
@@ -138,21 +210,10 @@ export default function AdminPage() {
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <label style={{ display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#888', marginBottom: 5 }}>Token admin</label>
-              <input
-                type="password"
-                value={token}
-                onChange={e => setToken(e.target.value)}
-                required
-                placeholder="••••••••••••"
-                style={inputCls}
-              />
+              <input type="password" value={token} onChange={e => setToken(e.target.value)} required placeholder="••••••••••••" style={inputCls} />
             </div>
             {authError && <p style={{ fontSize: 11, color: '#cc0000', margin: 0 }}>{authError}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ background: '#000', color: '#fff', border: 'none', padding: 12, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}
-            >
+            <button type="submit" disabled={loading} style={{ background: '#000', color: '#fff', border: 'none', padding: 12, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
               {loading ? 'Connexion…' : 'Accéder au backoffice'}
             </button>
           </form>
@@ -164,21 +225,18 @@ export default function AdminPage() {
   const stats = [
     { label: 'Lieux actifs', value: venues.filter(v => v.active).length, Icon: MapPin },
     { label: 'Utilisateurs', value: users.length, Icon: Users },
-    { label: 'Demandes établissements', value: requests.filter(r => !r.reviewed).length, Icon: Building },
-    { label: 'Suggestions lieux', value: suggestions.filter(s => !s.reviewed).length, Icon: MessageSquare },
+    { label: 'Demandes', value: requests.filter(r => !r.reviewed).length, Icon: Building },
+    { label: 'Signalements', value: reports.filter(r => !r.reviewed).length, Icon: AlertTriangle },
   ]
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f4f4', ...font }}>
 
-      {/* Header */}
       <header style={{ background: '#000', color: '#fff', padding: '0 24px', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontFamily: 'Impact, Arial Narrow, Arial, sans-serif', fontSize: 22, letterSpacing: '0.04em' }}>YANA <span style={{ fontSize: 11, fontWeight: 400, letterSpacing: '0.12em', color: '#555', fontFamily: 'Inter, sans-serif', textTransform: 'uppercase' }}>Admin</span></div>
-        <button
-          onClick={loadAll}
-          disabled={loading}
-          style={{ background: 'none', border: '1px solid #222', color: '#888', padding: '6px 12px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
+        <div style={{ fontFamily: 'Impact, Arial Narrow, Arial, sans-serif', fontSize: 22, letterSpacing: '0.04em' }}>
+          YANA <span style={{ fontSize: 11, fontWeight: 400, letterSpacing: '0.12em', color: '#555', fontFamily: 'Inter, sans-serif', textTransform: 'uppercase' }}>Admin</span>
+        </div>
+        <button onClick={loadAll} disabled={loading} style={{ background: 'none', border: '1px solid #222', color: '#888', padding: '6px 12px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
           <RefreshCw size={12} style={{ animation: loading ? 'spin 0.7s linear infinite' : 'none' }} />
           Actualiser
         </button>
@@ -198,18 +256,15 @@ export default function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e0e0e0', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e0e0e0', marginBottom: 16, overflowX: 'auto' }}>
           {TABS.map((tab, i) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(i)}
-              style={{
-                padding: '10px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em',
-                background: 'none', border: 'none', borderBottom: activeTab === i ? '2px solid #000' : '2px solid transparent',
-                color: activeTab === i ? '#000' : '#aaa', cursor: 'pointer',
-              }}
-            >
+            <button key={tab} onClick={() => setActiveTab(i)} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', background: 'none', border: 'none', borderBottom: activeTab === i ? '2px solid #000' : '2px solid transparent', color: activeTab === i ? '#000' : '#aaa', cursor: 'pointer', whiteSpace: 'nowrap' }}>
               {tab}
+              {i === 4 && reports.filter(r => !r.reviewed).length > 0 && (
+                <span style={{ marginLeft: 6, background: '#cc0000', color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 8 }}>
+                  {reports.filter(r => !r.reviewed).length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -219,10 +274,7 @@ export default function AdminPage() {
           <div style={{ background: '#fff', border: '1px solid #e8e8e8' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e8e8e8' }}>
               <h2 style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>Lieux ({venues.length})</h2>
-              <button
-                onClick={() => setShowAddVenue(!showAddVenue)}
-                style={{ background: '#000', color: '#fff', border: 'none', padding: '7px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-              >
+              <button onClick={() => setShowAddVenue(!showAddVenue)} style={{ background: '#000', color: '#fff', border: 'none', padding: '7px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Plus size={12} /> Ajouter
               </button>
             </div>
@@ -230,6 +282,29 @@ export default function AdminPage() {
             {showAddVenue && (
               <form onSubmit={handleAddVenue} style={{ padding: 16, borderBottom: '1px solid #e8e8e8', background: '#f8f8f8' }}>
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#000', margin: '0 0 12px' }}>Nouveau lieu</p>
+
+                {/* Import Google Maps */}
+                <div style={{ background: '#fff', border: '1px solid #e0e0e0', padding: 12, marginBottom: 14 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#555', margin: '0 0 8px' }}>Import depuis Google Maps</p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      value={gmapsUrl}
+                      onChange={e => setGmapsUrl(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleGmapsImport())}
+                      placeholder="Coller une URL Google Maps…"
+                      style={{ ...inputCls, flex: 1 }}
+                    />
+                    <button type="button" onClick={handleGmapsImport} disabled={gmapsLoading || !gmapsUrl.trim()} style={{ background: '#000', color: '#fff', border: 'none', padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: gmapsLoading || !gmapsUrl.trim() ? 0.4 : 1 }}>
+                      {gmapsLoading ? 'Extraction…' : 'Extraire →'}
+                    </button>
+                  </div>
+                  {gmapsError && <p style={{ fontSize: 11, color: '#cc0000', margin: '6px 0 0' }}>{gmapsError}</p>}
+                  <p style={{ fontSize: 10, color: '#bbb', margin: '5px 0 0' }}>
+                    Clic droit sur le lieu → <strong>"Qu'est-ce qu'il y a ici ?"</strong> → copie l'URL de la barre d'adresse
+                  </p>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                   {[
                     { key: 'name', label: 'Nom *', placeholder: 'Café du Coin' },
@@ -246,7 +321,7 @@ export default function AdminPage() {
                   ))}
                   <div style={{ gridColumn: '1 / -1' }}>
                     <label style={{ display: 'block', fontSize: 10, color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Commentaire</label>
-                    <input type="text" value={newVenue.comment} onChange={e => setNewVenue(n => ({ ...n, comment: e.target.value }))} placeholder="Description pour les utilisateurs…" style={inputCls} />
+                    <input type="text" value={newVenue.comment} onChange={e => setNewVenue(n => ({ ...n, comment: e.target.value }))} placeholder="Bonne luminosité, prises partout, wifi rapide…" style={inputCls} />
                   </div>
                 </div>
                 {addVenueError && <p style={{ fontSize: 11, color: '#cc0000', margin: '8px 0 0' }}>{addVenueError}</p>}
@@ -263,7 +338,12 @@ export default function AdminPage() {
               {venues.map((venue, i) => (
                 <div key={venue.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', opacity: venue.active ? 1 : 0.4 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#000', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{venue.name}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#000', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {venue.name}
+                      {reports.some(r => r.venues?.id === venue.id && !r.reviewed) && (
+                        <span style={{ marginLeft: 6, fontSize: 9, color: '#cc0000', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>⚑ signalé</span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 10, color: '#aaa' }}>{venue.address} · {venue.lat?.toFixed(4)}, {venue.lng?.toFixed(4)} · {venue.venue_type}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -289,29 +369,27 @@ export default function AdminPage() {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8e8e8' }}>
               <h2 style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>Utilisateurs ({users.length})</h2>
             </div>
-            <div>
-              {users.map((user, i) => (
-                <div key={user.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', opacity: user.active ? 1 : 0.4 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#000' }}>{user.first_name} {user.last_name}</div>
-                    <div style={{ fontSize: 10, color: '#aaa' }}>{user.email} · {user.industry}</div>
-                    {user.project_name && <div style={{ fontSize: 10, color: '#aaa' }}>{user.project_name}</div>}
-                    <div style={{ fontSize: 10, color: '#ccc', marginTop: 2 }}>Inscrit le {new Date(user.created_at).toLocaleDateString('fr-FR')}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', padding: '2px 8px', border: `1px solid ${user.profile_complete ? '#22c55e' : '#f0c040'}`, color: user.profile_complete ? '#22c55e' : '#d4a000' }}>
-                      {user.profile_complete ? 'Complet' : 'Incomplet'}
-                    </span>
-                    <button onClick={() => toggleUserActive(user)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4 }}>
-                      {user.active ? <EyeOff size={13} /> : <Eye size={13} />}
-                    </button>
-                    <button onClick={() => deleteUser(user.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4 }}>
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+            {users.map((user, i) => (
+              <div key={user.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', opacity: user.active ? 1 : 0.4 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#000' }}>{user.first_name} {user.last_name}</div>
+                  <div style={{ fontSize: 10, color: '#aaa' }}>{user.email} · {user.industry}</div>
+                  {user.project_name && <div style={{ fontSize: 10, color: '#aaa' }}>{user.project_name}</div>}
+                  <div style={{ fontSize: 10, color: '#ccc', marginTop: 2 }}>Inscrit le {new Date(user.created_at).toLocaleDateString('fr-FR')}</div>
                 </div>
-              ))}
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', padding: '2px 8px', border: `1px solid ${user.profile_complete ? '#22c55e' : '#f0c040'}`, color: user.profile_complete ? '#22c55e' : '#d4a000' }}>
+                    {user.profile_complete ? 'Complet' : 'Incomplet'}
+                  </span>
+                  <button onClick={() => toggleUserActive(user)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4 }}>
+                    {user.active ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                  <button onClick={() => deleteUser(user.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: 4 }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -321,7 +399,7 @@ export default function AdminPage() {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8e8e8' }}>
               <h2 style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>Demandes ({requests.filter(r => !r.reviewed).length} non traitées)</h2>
             </div>
-            {requests.length === 0 && <p style={{ fontSize: 11, color: '#bbb', padding: '24px 16px', textAlign: 'center', margin: 0 }}>Aucune demande pour l'instant</p>}
+            {requests.length === 0 && <p style={{ fontSize: 11, color: '#bbb', padding: '24px 16px', textAlign: 'center', margin: 0 }}>Aucune demande</p>}
             {requests.map((req, i) => (
               <div key={req.id} style={{ padding: '12px 16px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', opacity: req.reviewed ? 0.4 : 1 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -339,9 +417,7 @@ export default function AdminPage() {
                     <button onClick={() => markReviewed('request', req.id)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid #22c55e', color: '#22c55e', padding: '5px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>
                       <CheckCircle size={11} /> Traité
                     </button>
-                  ) : (
-                    <span style={{ fontSize: 10, color: '#ccc', flexShrink: 0 }}>Traité</span>
-                  )}
+                  ) : <span style={{ fontSize: 10, color: '#ccc', flexShrink: 0 }}>Traité</span>}
                 </div>
               </div>
             ))}
@@ -354,7 +430,7 @@ export default function AdminPage() {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8e8e8' }}>
               <h2 style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>Suggestions ({suggestions.filter(s => !s.reviewed).length} non traitées)</h2>
             </div>
-            {suggestions.length === 0 && <p style={{ fontSize: 11, color: '#bbb', padding: '24px 16px', textAlign: 'center', margin: 0 }}>Aucune suggestion pour l'instant</p>}
+            {suggestions.length === 0 && <p style={{ fontSize: 11, color: '#bbb', padding: '24px 16px', textAlign: 'center', margin: 0 }}>Aucune suggestion</p>}
             {suggestions.map((s, i) => (
               <div key={s.id} style={{ padding: '12px 16px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', opacity: s.reviewed ? 0.4 : 1 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -371,9 +447,40 @@ export default function AdminPage() {
                     <button onClick={() => markReviewed('suggestion', s.id)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid #22c55e', color: '#22c55e', padding: '5px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>
                       <CheckCircle size={11} /> Traité
                     </button>
-                  ) : (
-                    <span style={{ fontSize: 10, color: '#ccc', flexShrink: 0 }}>Traité</span>
-                  )}
+                  ) : <span style={{ fontSize: 10, color: '#ccc', flexShrink: 0 }}>Traité</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* TAB: SIGNALEMENTS */}
+        {activeTab === 4 && (
+          <div style={{ background: '#fff', border: '1px solid #e8e8e8' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8e8e8' }}>
+              <h2 style={{ fontSize: 12, fontWeight: 700, margin: 0 }}>Signalements ({reports.filter(r => !r.reviewed).length} non traités)</h2>
+            </div>
+            {reports.length === 0 && <p style={{ fontSize: 11, color: '#bbb', padding: '24px 16px', textAlign: 'center', margin: 0 }}>Aucun signalement pour l'instant</p>}
+            {reports.map((rep, i) => (
+              <div key={rep.id} style={{ padding: '12px 16px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', opacity: rep.reviewed ? 0.4 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <AlertTriangle size={12} style={{ color: rep.reviewed ? '#ccc' : '#cc0000', flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#000' }}>{rep.venues?.name || 'Lieu inconnu'}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ color: '#444' }}>"{rep.reason}"</span>
+                      {rep.users && <span>Par : {rep.users.first_name} {rep.users.last_name} · <a href={`mailto:${rep.users.email}`} style={{ color: '#000' }}>{rep.users.email}</a></span>}
+                      {rep.venues?.address && <span style={{ color: '#ccc' }}>{rep.venues.address}</span>}
+                      <span style={{ color: '#ccc' }}>Reçu le {new Date(rep.created_at).toLocaleDateString('fr-FR')}</span>
+                    </div>
+                  </div>
+                  {!rep.reviewed ? (
+                    <button onClick={() => markReviewed('report', rep.id)} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid #22c55e', color: '#22c55e', padding: '5px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>
+                      <CheckCircle size={11} /> Traité
+                    </button>
+                  ) : <span style={{ fontSize: 10, color: '#ccc', flexShrink: 0 }}>Traité</span>}
                 </div>
               </div>
             ))}
