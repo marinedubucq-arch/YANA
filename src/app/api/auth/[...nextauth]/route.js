@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth'
 import { createClient } from '@supabase/supabase-js'
 
-const handler = NextAuth({
+export const authOptions = {
   debug: true,
   providers: [
     {
@@ -58,23 +58,23 @@ const handler = NextAuth({
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-  try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    )
-    const linkedinId = profile?.sub ?? account?.providerAccountId
-    await supabase.from('users').upsert({
-      linkedin_id: linkedinId,
-      linkedin_url: `https://www.linkedin.com/in/${linkedinId}`,
-      first_name: profile?.given_name ?? '',
-      last_name: profile?.family_name ?? '',
-      email: user.email,
-      profile_complete: false,
-    }, { onConflict: 'linkedin_id', ignoreDuplicates: true })
-  } catch (err) { console.error('[signIn]', err) }
-  return true
-},
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        )
+        const linkedinId = profile?.sub ?? account?.providerAccountId
+        await supabase.from('users').upsert({
+          linkedin_id: linkedinId,
+          linkedin_url: `https://www.linkedin.com/in/${linkedinId}`,
+          first_name: profile?.given_name ?? '',
+          last_name: profile?.family_name ?? '',
+          email: user.email,
+          profile_complete: false,
+        }, { onConflict: 'linkedin_id', ignoreDuplicates: true })
+      } catch (err) { console.error('[signIn]', err) }
+      return true
+    },
     async jwt({ token, account, profile }) {
       if (account && profile) {
         token.linkedinId = profile.sub ?? account.providerAccountId
@@ -106,6 +106,7 @@ const handler = NextAuth({
   pages: { signIn: '/', error: '/' },
   secret: process.env.NEXTAUTH_SECRET,
   trustHost: true,
-})
+}
 
+const handler = NextAuth(authOptions)
 export { handler as GET, handler as POST }
