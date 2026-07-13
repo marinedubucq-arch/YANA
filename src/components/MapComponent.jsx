@@ -4,7 +4,6 @@ import L from 'leaflet'
 
 function createVenueIcon(count) {
   if (count > 0) {
-    // Green filled circle with count
     const html = `
       <div style="position:relative;width:34px;height:34px;">
         <div style="
@@ -21,7 +20,6 @@ function createVenueIcon(count) {
     `
     return L.divIcon({ html, className: 'venue-marker-icon', iconSize: [34, 34], iconAnchor: [17, 17] })
   } else {
-    // Black outlined circle, transparent fill
     const html = `
       <div style="
         width:20px;height:20px;
@@ -35,28 +33,23 @@ function createVenueIcon(count) {
   }
 }
 
-export default function MapComponent({ venues, onVenueClick, selectedVenueId }) {
+export default function MapComponent({ venues, onVenueClick, selectedVenueId, flyTo }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const markersRef = useRef({})
 
   useEffect(() => {
     if (mapInstanceRef.current) return
-
     const map = L.map(mapRef.current, {
       center: [48.8566, 2.3522],
       zoom: 13,
       zoomControl: true,
     })
-
-    // Light, minimal tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(map)
-
     mapInstanceRef.current = map
-
     return () => {
       map.remove()
       mapInstanceRef.current = null
@@ -66,17 +59,14 @@ export default function MapComponent({ venues, onVenueClick, selectedVenueId }) 
   useEffect(() => {
     const map = mapInstanceRef.current
     if (!map || !venues) return
-
     Object.values(markersRef.current).forEach(m => m.remove())
     markersRef.current = {}
-
     venues.forEach(venue => {
       const count = venue.presence?.length || 0
       const icon = createVenueIcon(count)
       const marker = L.marker([venue.lat, venue.lng], { icon })
         .addTo(map)
         .on('click', () => onVenueClick(venue))
-
       marker.bindTooltip(
         `<strong style="font-family:Inter,sans-serif;font-size:12px;">${venue.name}</strong>${
           count > 0
@@ -85,7 +75,6 @@ export default function MapComponent({ venues, onVenueClick, selectedVenueId }) 
         }`,
         { direction: 'top', offset: [0, -16] }
       )
-
       markersRef.current[venue.id] = marker
     })
   }, [venues, onVenueClick])
@@ -99,6 +88,13 @@ export default function MapComponent({ venues, onVenueClick, selectedVenueId }) 
       map.flyTo([venue.lat, venue.lng], 16, { duration: 0.8 })
     }
   }, [selectedVenueId, venues])
+
+  // Recentre sur la ville filtrée
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map || !flyTo) return
+    map.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 12, { duration: 1.2 })
+  }, [flyTo])
 
   return <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: '400px' }} />
 }
