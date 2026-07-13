@@ -49,8 +49,7 @@ export default function Dashboard() {
   const fetchVenues = useCallback(async () => {
     setLoading(true)
     try {
-      const params = cityFilter ? `?city=${encodeURIComponent(cityFilter)}` : ''
-      const res = await fetch(`/api/venues${params}`)
+      const res = await fetch('/api/venues')
       const data = await res.json()
       setVenues(Array.isArray(data) ? data : [])
       setLastRefresh(new Date())
@@ -59,7 +58,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [cityFilter])
+  }, [])
 
   const fetchMyPresence = useCallback(async () => {
     try {
@@ -175,7 +174,7 @@ export default function Dashboard() {
         {profileComplete && cities.length > 1 && (
           <select
             value={cityFilter}
-            onChange={e => setCityFilter(e.target.value)}
+            onChange={e => { setCityFilter(e.target.value); setSelectedVenue(null) }}
             style={{ background: '#111', border: '1px solid #222', color: '#fff', padding: '6px 10px', fontSize: 11, outline: 'none', fontFamily: 'Inter, sans-serif' }}
           >
             <option value="">Toutes les villes</option>
@@ -322,21 +321,24 @@ export default function Dashboard() {
 
             {/* Selected venue detail */}
             {selectedVenue && (
-              <div style={{ borderTop: '1px solid #e8e8e8', padding: 14, background: '#f8f8f8', flexShrink: 0 }}>
-                <h3 style={{ fontSize: 12, fontWeight: 700, color: '#000', margin: '0 0 3px' }}>{selectedVenue.name}</h3>
-                <p style={{ fontSize: 10, color: '#aaa', margin: '0 0 6px' }}>{selectedVenue.address}</p>
-                {selectedVenue.comment && <p style={{ fontSize: 11, color: '#555', margin: '0 0 10px', lineHeight: 1.5 }}>{selectedVenue.comment}</p>}
+              <div style={{ borderTop: '2px solid #000', padding: 14, background: '#000', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0 }}>{selectedVenue.name}</h3>
+                  <button onClick={() => setSelectedVenue(null)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 0 0 8px', flexShrink: 0 }}>×</button>
+                </div>
+                <p style={{ fontSize: 10, color: '#666', margin: '0 0 8px' }}>{selectedVenue.address}</p>
+                {selectedVenue.comment && <p style={{ fontSize: 11, color: '#aaa', margin: '0 0 10px', lineHeight: 1.5 }}>{selectedVenue.comment}</p>}
 
                 {selectedVenue.presence?.length > 0 && (
                   <div style={{ marginBottom: 10 }}>
-                    <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#aaa', margin: '0 0 6px' }}>Qui est là ?</p>
+                    <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#444', margin: '0 0 6px' }}>Qui est là ?</p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {selectedVenue.presence.map((p, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#000' }}>{p.firstName}</span>
-                          <span style={{ fontSize: 11, color: '#aaa' }}>· {p.industry}</span>
-                          <span style={{ fontSize: 10, color: '#ccc' }}>· {PERIOD_LABELS[p.period]}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#fff' }}>{p.firstName}</span>
+                          <span style={{ fontSize: 11, color: '#666' }}>· {p.industry}</span>
+                          <span style={{ fontSize: 10, color: '#444' }}>· {PERIOD_LABELS[p.period]}</span>
                         </div>
                       ))}
                     </div>
@@ -345,13 +347,13 @@ export default function Dashboard() {
 
                 <button
                   onClick={() => setPresenceVenue(selectedVenue)}
-                  style={{ width: '100%', background: '#000', color: '#fff', border: 'none', padding: 10, fontSize: 10, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.08em', textTransform: 'uppercase' }}
+                  style={{ width: '100%', background: '#fff', color: '#000', border: 'none', padding: 10, fontSize: 10, fontWeight: 700, cursor: 'pointer', letterSpacing: '0.08em', textTransform: 'uppercase' }}
                 >
                   {myPresence?.venue_id === selectedVenue.id ? 'Modifier ma présence' : 'Je suis ici'}
                 </button>
 
                 {/* ── Signalement ── */}
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #ececec' }}>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #1a1a1a' }}>
                   {reportSuccess[selectedVenue.id] ? (
                     <p style={{ fontSize: 10, color: '#22c55e', margin: 0, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       ✓ Signalement envoyé — merci !
@@ -363,19 +365,19 @@ export default function Dashboard() {
                         onChange={e => setReportText(e.target.value)}
                         placeholder="Décris le problème (wifi coupé, trop bruyant, consommation obligatoire, prises supprimées…)"
                         rows={2}
-                        style={{ width: '100%', fontSize: 11, border: '1px solid #ddd', padding: '6px 8px', resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif', color: '#000', background: '#fff', boxSizing: 'border-box', borderRadius: 0 }}
+                        style={{ width: '100%', fontSize: 11, border: '1px solid #333', padding: '6px 8px', resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif', color: '#fff', background: '#111', boxSizing: 'border-box', borderRadius: 0 }}
                       />
                       <div style={{ display: 'flex', gap: 6, marginTop: 5, alignItems: 'center' }}>
                         <button
                           onClick={() => { setReportingVenueId(null); setReportText('') }}
-                          style={{ fontSize: 10, color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: 0 }}
+                          style={{ fontSize: 10, color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: 0 }}
                         >
                           Annuler
                         </button>
                         <button
                           onClick={() => handleReport(selectedVenue.id)}
                           disabled={!reportText.trim() || reportLoading}
-                          style={{ fontSize: 10, color: '#000', background: 'none', border: '1px solid #000', padding: '4px 10px', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: !reportText.trim() || reportLoading ? 0.4 : 1 }}
+                          style={{ fontSize: 10, color: '#000', background: '#fff', border: 'none', padding: '5px 12px', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: !reportText.trim() || reportLoading ? 0.4 : 1 }}
                         >
                           {reportLoading ? 'Envoi…' : 'Envoyer →'}
                         </button>
@@ -384,7 +386,7 @@ export default function Dashboard() {
                   ) : (
                     <button
                       onClick={() => setReportingVenueId(selectedVenue.id)}
-                      style={{ fontSize: 10, color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: 0 }}
+                      style={{ fontSize: 10, color: '#888', background: 'none', border: '1px solid #333', cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '5px 10px', width: '100%' }}
                     >
                       ⚑ Ce lieu n'est plus laptop-friendly ?
                     </button>
