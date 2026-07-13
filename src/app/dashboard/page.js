@@ -67,6 +67,7 @@ export default function Dashboard() {
   const [myPresence, setMyPresence] = useState(null)
   const [showProfile, setShowProfile] = useState(false)
   const [lastRefresh, setLastRefresh] = useState(null)
+  const [mapFlyTo, setMapFlyTo] = useState(null)
 
   // Signalement
   const [reportingVenueId, setReportingVenueId] = useState(null)
@@ -138,6 +139,20 @@ export default function Dashboard() {
   }
 
   const cities = [...new Set(venues.map(v => normalizeCity(v.city)).filter(Boolean))].sort()
+
+  // Quand le filtre ville change, recentre la carte sur les lieux filtrés
+  useEffect(() => {
+    if (!cityFilter || filteredVenues.length === 0) return
+    const lats = filteredVenues.map(v => v.lat).filter(Boolean)
+    const lngs = filteredVenues.map(v => v.lng).filter(Boolean)
+    if (!lats.length) return
+    const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
+    const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
+    // Zoom adapté selon l'étendue géographique
+    const latSpan = Math.max(...lats) - Math.min(...lats)
+    const zoom = latSpan > 0.5 ? 11 : latSpan > 0.1 ? 12 : 13
+    setMapFlyTo({ lat: centerLat, lng: centerLng, zoom })
+  }, [cityFilter])
   const filteredVenues = venues.filter(v => {
     const matchCity = !cityFilter || normalizeCity(v.city) === cityFilter
     const matchSearch = !searchFilter ||
@@ -286,6 +301,7 @@ export default function Dashboard() {
                 venues={filteredVenues}
                 onVenueClick={handleVenueClick}
                 selectedVenueId={selectedVenue?.id}
+                flyTo={mapFlyTo}
               />
 
               {myPresence && (
