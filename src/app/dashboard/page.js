@@ -360,11 +360,8 @@ export default function Dashboard() {
                   <VenueCard
                     key={venue.id}
                     venue={venue}
-                    onClick={() => {
-                      setSelectedVenue(venue)
-                      if (view !== 'map') setView('map')
-                    }}
-                    isSelected={selectedVenue?.id === venue.id}
+                    onClick={() => setPresenceVenue(venue)}
+                    isSelected={myPresence?.venue_id === venue.id}
                     myPresence={myPresence}
                   />
                 ))
