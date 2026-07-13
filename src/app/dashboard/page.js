@@ -16,6 +16,42 @@ const PERIOD_LABELS = {
   full_day: 'Journée entière',
 }
 
+// Regroupe les noms de quartiers/arrondissements sous la ville mère
+function normalizeCity(city) {
+  if (!city) return city
+  const c = city.toLowerCase()
+  // Londres et Grand Londres
+  if (c.includes('london') || c.includes('londres') ||
+      /\b(westminster|hackney|islington|camden|tower hamlets|southwark|lambeth|kensington|chelsea|hammersmith|wandsworth|greenwich|lewisham|bromley|croydon|merton|richmond|kingston|sutton|bexley|havering|redbridge|barking|newham|waltham forest|haringey|enfield|barnet|brent|ealing|hounslow|hillingdon|harrow|city of london|cité de londres|cité de westminster)\b/.test(c))
+    return 'Londres'
+  // Bruxelles et communes bruxelloises
+  if (c.includes('bruxelles') || c.includes('brussels') || c.includes('brussel') ||
+      /\b(ixelles|elsene|etterbeek|uccle|ukkel|molenbeek|saint-gilles|sint-gillis|saint-josse|sint-joost|schaerbeek|schaarbeek|anderlecht|jette|laeken|woluwe|forest|vorst|auderghem|oudergem|watermael|evere|ganshoren|koekelberg)\b/.test(c))
+    return 'Bruxelles'
+  // Paris et petite couronne
+  if (c.includes('paris') || /\b(boulogne-billancourt|levallois|neuilly|issy|vincennes|montreuil|saint-denis|clichy|colombes|nanterre|courbevoie|puteaux|suresnes|rueil|asnières|gennevilliers|vanves|malakoff|montrouge|cachan|arcueil|bagneux|châtillon|clamart|meudon|sèvres|boulogne|fontenay|nogent|joinville|charenton|ivry|vitry|créteil|maisons-alfort|alfortville|choisy|orly|villejuif)\b/.test(c))
+    return 'Paris'
+  // New York
+  if (c.includes('new york') || /\b(manhattan|brooklyn|queens|bronx|staten island|harlem|williamsburg|astoria|flushing|jamaica|long island city|bushwick|greenpoint|dumbo|tribeca|soho|chelsea|midtown|downtown)\b/.test(c))
+    return 'New York'
+  // Amsterdam
+  if (c.includes('amsterdam') || /\b(de pijp|jordaan|oud-west|oost|noord|zuidoost|centrum|westpoort|buitenveldert|nieuw-west)\b/.test(c))
+    return 'Amsterdam'
+  // Berlin
+  if (c.includes('berlin') || /\b(mitte|prenzlauer berg|friedrichshain|kreuzberg|neukölln|charlottenburg|schöneberg|tempelhof|steglitz|spandau|wedding|moabit|pankow|lichtenberg|treptow|köpenick|marzahn|hellersdorf|reinickendorf|zehlendorf)\b/.test(c))
+    return 'Berlin'
+  // Barcelona
+  if (c.includes('barcelona') || c.includes('barcelone') || /\b(eixample|gràcia|sant martí|sants|les corts|sarrià|horta|nou barris|sant andreu|ciutat vella|poblenou)\b/.test(c))
+    return 'Barcelone'
+  // Madrid
+  if (c.includes('madrid') || /\b(retiro|salamanca|chamberí|chamartín|tetuán|fuencarral|moncloa|latina|carabanchel|usera|puente de vallecas|moratalaz|ciudad lineal|hortaleza|villaverde|vallecas|barajas|centro)\b/.test(c))
+    return 'Madrid'
+  // Lisbon / Lisbonne
+  if (c.includes('lisbon') || c.includes('lisbonne') || c.includes('lisboa') || /\b(alfama|belém|chiado|baixa|mouraria|intendente|mouraria|parque das nações|lumiar|benfica|restelo|ajuda|areeiro|alvalade|campo grande|carnide|olivais)\b/.test(c))
+    return 'Lisbonne'
+  return city
+}
+
 export default function Dashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
@@ -101,9 +137,9 @@ export default function Dashboard() {
     }
   }
 
-  const cities = [...new Set(venues.map(v => v.city))].sort()
+  const cities = [...new Set(venues.map(v => normalizeCity(v.city)).filter(Boolean))].sort()
   const filteredVenues = venues.filter(v => {
-    const matchCity = !cityFilter || v.city === cityFilter
+    const matchCity = !cityFilter || normalizeCity(v.city) === cityFilter
     const matchSearch = !searchFilter ||
       v.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
       v.address.toLowerCase().includes(searchFilter.toLowerCase())
@@ -326,7 +362,15 @@ export default function Dashboard() {
                   <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0 }}>{selectedVenue.name}</h3>
                   <button onClick={() => setSelectedVenue(null)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 0 0 8px', flexShrink: 0 }}>×</button>
                 </div>
-                <p style={{ fontSize: 10, color: '#666', margin: '0 0 8px' }}>{selectedVenue.address}</p>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedVenue.name + ', ' + selectedVenue.address)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'block', fontSize: 10, color: '#666', margin: '0 0 8px', textDecoration: 'underline', cursor: 'pointer' }}
+                  title="Voir l'itinéraire dans Google Maps"
+                >
+                  {selectedVenue.address} ↗
+                </a>
                 {selectedVenue.comment && <p style={{ fontSize: 11, color: '#aaa', margin: '0 0 10px', lineHeight: 1.5 }}>{selectedVenue.comment}</p>}
 
                 {selectedVenue.presence?.length > 0 && (
